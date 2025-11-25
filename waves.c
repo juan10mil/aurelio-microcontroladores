@@ -26,32 +26,43 @@ int main()
     unsigned int valor_adc=0;
     unsigned int valor_switch=0;
     float voltaje =0;
+    float array[4096];
     unsigned int valor_dac=0;
+    int flag=0;
     while (1) {
-    	int i;
+    	int i,j;
 		valor_adc= *adc & 0xFFF; // lee los 12 bits del canal CH0
 		voltaje= (valor_adc*4.096)/4095.0;
-		valor_switch= *sws;
+		if( flag == 0) {
+		valor_switch= *sws;	
 		for( i=0; i< 4096; i++){
 			float tiempo = (float) i /4095; // va de 0 a 1
 			float onda =0.0;
 			if (valor_switch >= 0x10){
-				onda = sin(M_PI * tiempo);
+				if (tiempo <= 0.5 ){
+						onda = tiempo;
+						array[i]=onda;
+					}else{
+						onda = 1.0 - tiempo;
+						array[i]=onda;
+					}
 			}
 			else{
 				if(voltaje < 2.5){
 					if (tiempo <= 0.5 ){
-						onda = sin(M_PI * tiempo);
+						onda = tiempo;
+						array[i]=onda;
 					}else{
-						float x = (tiempo - 0.5) * 2;
-						onda = 1.0 - (x * x);
+						onda = 1.0 - (tiempo * tiempo);
+						array[i]=onda;
 					}
 				}else{
 					if (tiempo <= 0.5 ){
-						float x = tiempo* 2;
-						onda = x * x;	
+						onda = tiempo * tiempo;	
+						array[i]=onda;
 					}else{
-						onda = sin(M_PI * (1.0 - tiempo));
+						onda = (1.0 - tiempo);
+						array[i]=onda;
 					}
 				}	
 			}
@@ -60,9 +71,18 @@ int main()
 			if ((i%200) == 0){
 				mostrar_voltaje(voltaje);
 			}
+			if(i == 4095) flag = 1;
+			}
+		}else{
+			for(j=0;j<4096;j++){
+				valor_dac = (unsigned int)(array[j]*4095);
+				*dac= valor_dac;
+			}
+			if(valor_switch != *sws){
+				flag=0;
+			}
 			
 		}
-	
     }
   return 0;
 }

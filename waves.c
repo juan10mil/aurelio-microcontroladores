@@ -10,9 +10,9 @@ volatile unsigned int *adc = (unsigned int *) ADC_ADDR;
 volatile unsigned int *dac = (unsigned int *) DAC_ADDR;
 volatile unsigned int *led = (unsigned int *) LED_ADDR;
 volatile unsigned int *sws = (unsigned int *) SWS_ADDR;
-float array[2048]; //carga
-float array2[2048]; //descarga
-float array3[4096]; //recta
+int array[2048]; //carga
+int array2[2048]; //descarga
+int array3[4096]; //onda triangular
 float onda = 0.0;
 void mostrar_voltaje(float voltaje){
 	unsigned int entero = (unsigned int) voltaje;
@@ -25,29 +25,35 @@ void mostrar_voltaje(float voltaje){
 
 void carga(){
 	int i;
+	float valor;
 	for(i = 0; i < 2048; i++){
-	array[i]= 1-exp((-1)*i/512);
+	valor = 1-exp((-1)*i/512.0);
+	array[i] = (unsigned int)(valor * 4095);
 	}
 }
 
 void descarga(){
 	int i;
+	float valor;
 	for(i = 0; i < 2048; i++){
-	array2[i]= exp((-1)*i/512);
+	valor = exp((-1)*i/512.0);
+	array2[i] = (unsigned int)(valor * 4095);
 	}
 
 }
 
 void recta(){
 	int i,j=0;
-	float tiempo;
+	float tiempo,valor;
 	for(i = 0; i < 2048; i++){
-	tiempo = i /2047; // va de 0 a 0.5
-	array3[i]= tiempo;
+	tiempo = i /2047.0; // va de 0 a 1
+	valor = tiempo * 4095;
+	array3[i] = (unsigned int) valor;
 	}
 	for(i = 2048; i < 4096; i++){
-	tiempo = j /2047;
-	array3[i]= 1- tiempo;
+	tiempo =  j /2047.0;
+	valor = (1- tiempo)*4095; // va de (1 a 0 )*4095
+	array3[i] = (unsigned int) valor;
 	j++;
 	}
 }
@@ -55,20 +61,19 @@ void recta(){
 int main()
 {
     printf("Hello from Nios II!\n");
-    printf("EE604 Introduccion a Microcontroladores - 4to Laboratorio 2025-1\n");
-    
-    unsigned int valor_adc = 0;
+    printf("EE604 Introduccion a Microcontroladores - 4to Laboratorio 2025-2\n");
     unsigned int valor_switch = 0;
-    float voltaje = 0;
-	
     unsigned int valor_dac = 0;
+    unsigned int valor_adc = 0;
+    float voltaje = 0;
+	int ciclos=0;
+	int flag=0;
 	descarga();
 	carga();
-int ciclos=0;
 	recta();
-int flag=0;
+	
     while (1) {
-    	int i,j;
+    int i,j;
 	
 	float tiempo;
 		valor_adc= *adc & 0xFFF; // lee los 12 bits del canal CH0
@@ -78,16 +83,8 @@ int flag=0;
 				if( flag==0) flag=1; // flag no volvera a ser cero
 				if (flag!=1) ciclos=0; // reinicia el ciclo si viene de otro patron	
 				flag=1; // asigna el flag al patron
-				for(i = 0; i < 2048; i++){			
-				onda = array3[i];// recta_posi
-				valor_dac = (unsigned int)(onda * 4095);
-				*dac= valor_dac;				
-					}
-				for(i = 2048; i < 4096; i++){				
-				onda = array3[i];//recta_nega
-				valor_dac = (unsigned int)(onda * 4095);
-				*dac= valor_dac;
-								
+				for(i = 0; i < 4096; i++){				
+					*dac= array3[i]; //onda triangular				
 					}
 				ciclos++;
 			}
@@ -98,15 +95,11 @@ int flag=0;
 						if (flag!=2) ciclos=0;	
 						flag=2;
 						for(i = 0; i < 2048; i++){			
-						onda = array3[i]; // recta_posi
-						valor_dac = (unsigned int)(onda * 4095);
-						*dac= valor_dac;				
+							*dac= array3[i];// recta_posi				
 						}
 					
 						for(i = 0; i < 2048; i++){
-						onda = array2[i]; // descarga
-						valor_dac = (unsigned int)(onda * 4095);
-						*dac= valor_dac;
+							*dac= array2[i]; // descarga
 						}		
 					ciclos++;
 
@@ -116,15 +109,11 @@ int flag=0;
 						if( flag==0) flag=3;	
 						if (flag!=3) ciclos=0;	
 						flag=3;				
-						for(i = 0; i < 2048; i++){
-						onda = array[i]; // carga
-						valor_dac = (unsigned int)(onda * 4095);
-						*dac= valor_dac;
+						for(i = 0; i < 2048; i++){ 
+							*dac= array[i];	// carga
 						}
 						for(i = 2048; i < 4096; i++){				
-						onda = array3[i]; //recta_nega
-						valor_dac = (unsigned int)(onda * 4095);
-						*dac= valor_dac;				
+							*dac= array3[i]; //recta_nega				
 						}	
 						ciclos++;
 				}	

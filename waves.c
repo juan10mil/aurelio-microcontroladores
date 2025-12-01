@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <math.h>
+
+// --- DEFINICIONES DE HARDWARE ---
 #define ADC_ADDR 0x08001000
 #define DAC_ADDR 0x08001020
 #define LED_ADDR 0x08001030
@@ -11,80 +13,123 @@ volatile unsigned int *dac = (unsigned int *) DAC_ADDR;
 volatile unsigned int *led = (unsigned int *) LED_ADDR;
 volatile unsigned int *sws = (unsigned int *) SWS_ADDR;
 
+// --- ONDAS ---
+unsigned int onda1[4096];   // Lineal + Descarga RC
+unsigned int onda2[4096];   // Carga RC + Lineal invertida
+unsigned int onda3[4096]; // Triangular
+
+// Constante de tiempo RC
+#define RC 512.0 
+
+// --- MOSTRAR EN 7 SEGMENTOS ---
 void mostrar_voltaje(float voltaje){
-	unsigned int entero = (unsigned int) voltaje;
-	unsigned int decimas = (unsigned int) ((voltaje - entero)*10)%10;
-	unsigned int centesimas =(unsigned int) ((voltaje-entero)*100)%10;
-	unsigned int milesimas = (unsigned int) ((voltaje - entero)* 1000)%10 ;
-	unsigned int display = (entero << 12) | (decimas << 8) | (centesimas << 4) | milesimas;
-	*led = display;
+    unsigned int entero = (unsigned int) voltaje;
+    unsigned int decimas = (unsigned int) ((voltaje - entero)*10)%10;
+    unsigned int centesimas =(unsigned int) ((voltaje-entero)*100)%10;
+    unsigned int milesimas = (unsigned int) ((voltaje - entero)* 1000)%10 ;
+    unsigned int display = (entero << 12) | (decimas << 8) | (centesimas << 4) | milesimas;
+    *led = display;
+}
+
+// --- CÁLCULO DE ONDAS ---
+void calcular_ondas() {
+    int i;
+    float pendiente = 4095.0 / 2047.0; 
+
+    for(i = 0; i < 4096; i++) {
+        // ---------------------------------------------------------
+        // ONDA 1: V < 2.5V
+        // Mitad 1: Lineal (y = x)
+        // Mitad 2: Descarga de Condensador (y = Vmax * e^(-t/RC))
+        // ---------------------------------------------------------
+        if (i < 2048) {
+            onda1[i] = (unsigned int)((float)i * pendiente); 
+        } else {
+            float t = (float)(i - 2048); 
+            float val = 4095.0 * exp(-t / RC); 
+            onda1[i] = (unsigned int)val;
+        }
+
+        // ---------------------------------------------------------
+        // ONDA 2: V > 2.5V
+        // Mitad 1: Carga de Condensador (y = Vmax * (1 - e^(-t/RC)))
+        // Mitad 2: Lineal negativa (y = -x)
+        // ---------------------------------------------------------
+        if (i < 2048) {
+            float t = (float)i;
+            float val = 4095.0 * (1.0 - exp(-t / RC_CONST));
+            onda2[i] = (unsigned int)val;
+        } else {
+            float t = (float)(i - 2048);
+            float val = 4095.0 - (t * pendiente);
+            if(val < 0) val = 0;
+            onda2[i] = (unsigned int)val;
+        }
+
+        // ---------------------------------------------------------
+        // ONDA 3: 31 < SW < 63
+        // Mitad 1: Subida lineal
+        // Mitad 2: Bajada lineal
+        // ---------------------------------------------------------
+        if (i < 2048) {
+            onda3[i] = (unsigned int)((float)i * pendiente);
+        } else {
+            float t = (float)(i - 2048);
+            unsigned int val2 = (unsigned int)(4095.0 - (t * pendiente));
+            if(val2 > 4095) val2 = 0;
+            onda3[i] = val2;
+        }
+    }
 }
 
 int main()
 {
-    printf("Hello from Nios II!\n");
-    printf("EE604 Introduccion a Microcontroladores - 4to Laboratorio 2025-1\n");
+	printf("Hello from Nios II!\n");
+    printf("EE604 Introduccion a Microcontroladores - 4to Laboratorio 2025-2\n");
+
+    calcular_ondas();
     
     unsigned int valor_adc = 0;
-    unsigned int valor_switch = 0;
+    unsigned int valor_sw = 0;
     float voltaje = 0;
-    float array[4096];
-    unsigned int valor_dac = 0;
-    int flag=0;
+    
+    unsigned int *onda_actual = onda1; 
+
+    int ciclos_contador = 0;
+
     while (1) {
-    	int i,j;
-		valor_adc= *adc & 0xFFF; // lee los 12 bits del canal CH0
-		voltaje= (valor_adc*4.096)/4095.0;
-		if( flag == 0) {
-		valor_switch= *sws;	
-		for( i = 0; i < 4096; i++){
-			float tiempo = (float) i /4095; // va de 0 a 1
-			float onda = 0.0;
-			if(valor_swtich > 0x1F && valor_switch < 0x3F){
-				if (tiempo <= 0.5 ){
-						onda = tiempo;
-						array[i] = onda;
-					}else{
-						onda = 1.0 - tiempo;
-						array[i] = onda;
-					}
-			}
-			else{
-				if(voltaje < 2.5){
-					if (tiempo <= 0.5 ){
-						onda = tiempo;
-						array[i] = onda;
-					}else{
-						onda = 1.0 - (tiempo * tiempo);
-						array[i] = onda;
-					}
-				}else{
-					if (tiempo <= 0.5 ){
-						onda = tiempo * tiempo;	
-						array[i] = onda;
-					}else{
-						onda = (1.0 - tiempo);
-						array[i] = onda;
-					}
-				}	
-			}
-			valor_dac = (unsigned int)(onda * 4095);
-			*dac= valor_dac;
-			if ((i%200) == 0){
-				mostrar_voltaje(voltaje);
-			}
-			if(i == 4095)flag = 1;
-			}
-		}else{
-			for(j=0;j<4096;j++){
-				valor_dac = (unsigned int)(array[j]*4095);
-				*dac = valor_dac;
-			}
-			if(valor_switch != *sws){
-				flag = 0;
-			}
-			
-		}
+    	
+        // --- SELECCIÓN DE ONDA ---
+        valor_adc = *adc & 0xFFF; 
+        voltaje = (valor_adc * 4.096) / 4095.0;
+        valor_sw = *sws & 0x3FF; 
+
+        // Prioridad 1: Switches (Rango 31 - 63)
+        if (valor_sw > 0x1F && valor_sw < 0x3F) {
+            onda_actual = onda3;
+        } 
+        // Prioridad 2: Voltaje
+        else {
+            if (voltaje < 2.5) {
+                onda_actual = onda1;
+            } else {
+                onda_actual = onda2;
+            }
+        }
+
+        // --- GENERACIÓN DE SEÑAL ---
+        int j;
+        for(j = 0; j < 4096; j++){
+            *dac = onda_actual[j];
+        }
+
+        // --- ACTUALIZACIÓN DE DISPLAY ---
+        ciclos_contador++;
+        
+        if (ciclos_contador >= 200) {
+            mostrar_voltaje(voltaje);
+            ciclos_contador = 0;
+        }
     }
-  return 0;
+    return 0;
 }

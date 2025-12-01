@@ -78,7 +78,7 @@ int main()
 	float tiempo;
 		valor_adc= *adc & 0xFFF; // lee los 12 bits del canal CH0
 		voltaje= (valor_adc*4.096)/4095.0;
-		valor_switch= *sws;	
+		valor_switch= *sws & 0x3FF;	
 		if(valor_switch > 0x1F && valor_switch < 0x3F){
 				if( flag==0) flag=1; // flag no volvera a ser cero
 				if (flag!=1) ciclos=0; // reinicia el ciclo si viene de otro patron	
